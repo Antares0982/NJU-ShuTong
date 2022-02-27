@@ -1,3 +1,7 @@
+//
+// Created By https://github.com/chenghaopeng.
+//
+
 package main
 
 import (
@@ -82,7 +86,7 @@ func getElectricInfo() {
 
 	electric, err := getElectricBalance(ids[0], ids[1], ids[2])
 
-	log.Println("taskElectricBalance", electric, err)
+	log.Println("electric left:", electric, err)
 
 	var info string
 	if err != nil {
@@ -91,8 +95,12 @@ func getElectricInfo() {
 		info, err = sendMessage("寝室电量不足 15 度啦～")
 	}
 
+	// do nothing if electric > 15
+
 	if err == nil {
-		log.Println(info)
+		if info != "" {
+			log.Println(info)
+		}
 	}
 }
 
