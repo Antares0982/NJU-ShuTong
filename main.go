@@ -1,40 +1,36 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/robfig/cron/v3"
 )
 
 var EAI_SESS = os.Getenv("EAI_SESS")
 var ROOM = strings.ReplaceAll(os.Getenv("ROOM"), " ", "")
-var MOD_AUTH_CAS = os.Getenv("MOD_AUTH_CAS")
+var TGID = os.Getenv("TGID")
+var TGBOTID = os.Getenv("TGBOTID")
 
-var tasks *cron.Cron
-
-func execScript(name string, env []string) {
-	cmd := exec.Cmd{
-		Path: "/bin/sh",
-		Args: []string{"/bin/sh", "/scripts/" + name + ".sh"},
-		Env:  env,
+func sendMessage(content string) (string, error) {
+	url := "https://api.telegram.org/bot" + TGBOTID + "/sendMessage?chat_id=" + TGID + "&text=" + content
+	request, err := http.Get(url)
+	if err != nil {
+		return "", err
 	}
-	output, err := cmd.Output()
-	log.Println("execScript", name, env, string(output), err)
-}
 
-func sendMessage(content string) {
-	execScript("message", []string{"CONTENT=" + content})
-	log.Println("sendMessage", content)
+	bodyByte, err := ioutil.ReadAll(request.Body)
+	if err != nil {
+		return "", err
+	}
+
+	body := string(bodyByte)
+	return body, nil
 }
 
 func doGet(url string, headers map[string]string) (string, error) {
@@ -69,94 +65,37 @@ func getElectricBalance(areaId string, buildId string, roomId string) (float64, 
 	}
 	reg := regexp.MustCompile(`dianyue\w*:\w*"([\d\.]+)"`)
 	result := reg.FindStringSubmatch(body)
+
 	if len(result) != 2 {
 		return 0, errors.New("EAI_SESS 失效了")
 	}
 	return strconv.ParseFloat(result[1], 64)
 }
 
-func getLatestHealthReport() (checked bool, err error) {
-	defer func() {
-		if err2 := recover(); err2 != nil {
-			err = errors.New(fmt.Sprint(err2))
-		}
-	}()
-	body, err := doGet("http://ehallapp.nju.edu.cn/xgfw/sys/yqfxmrjkdkappnju/apply/getApplyInfoList.do", map[string]string{
-		"Cookie": "MOD_AUTH_CAS=" + MOD_AUTH_CAS,
-	})
-	if err != nil {
-		return false, errors.New("MOD_AUTH_CAS 失效了")
-	}
-	var result map[string]interface{}
-	err = json.Unmarshal([]byte(body), &result)
-	if err != nil {
-		return false, err
-	}
-	var report map[string]interface{} = result["data"].([]interface{})[0].(map[string]interface{})
-	return report["TBZT"] == "1", nil
-}
-
-func taskElectricBalance() {
+func getElectricInfo() {
 	ids := strings.SplitN(ROOM, ",", 3)
-	if len(EAI_SESS) == 0 || len(ids) != 3 {
-		sendMessage("寝室未配置或配置错误，或未配置 EAI_SESS，不开启寝室电量监测")
-		return
-	}
-	sendMessage("书童开始为你监测寝室电量啦～")
-	sentErr, sentEle := false, false
-	tasks.AddFunc("*/5 * * * *", func() {
-		electric, err := getElectricBalance(ids[0], ids[1], ids[2])
-		log.Println("taskElectricBalance", electric, err)
-		if err != nil {
-			if !sentErr {
-				sentErr = true
-				sendMessage("获取寝室电量出错了：" + err.Error())
-			}
-		} else {
-			sentErr = false
-			if electric <= 10 {
-				if !sentEle {
-					sentEle = true
-					sendMessage("寝室电量不足 10 度啦～")
-				}
-			} else {
-				sentEle = false
-			}
-		}
-	})
-}
 
-func taskHealthReport() {
-	if len(MOD_AUTH_CAS) == 0 {
-		sendMessage("未配置 MOD_AUTH_CAS，不开启每日健康打卡监测")
-		return
+	if len(ids) != 3 {
+		sendMessage("寝室未配置或配置错误，或未配置 EAI_SESS，不开启寝室电量监测")
+		panic(errors.New("寝室未配置或配置错误"))
 	}
-	sendMessage("书童开始为你监测每日健康打卡啦～")
-	sentErr := false
-	// tasks.AddFunc("0 10,22 * * *", func() {
-	// 注意 docker 里一般都是零时区
-	tasks.AddFunc("0 2,14 * * *", func() {
-		checked, err := getLatestHealthReport()
-		log.Println("taskHealthReport", checked, err)
-		if err != nil {
-			if !sentErr {
-				sentErr = true
-				sendMessage("获取每日健康打卡出错了：" + err.Error())
-			}
-		} else {
-			sentErr = false
-			if !checked {
-				sendMessage("记得今天的每日健康打卡喔～")
-			}
-		}
-	})
+
+	electric, err := getElectricBalance(ids[0], ids[1], ids[2])
+
+	log.Println("taskElectricBalance", electric, err)
+
+	var info string
+	if err != nil {
+		info, err = sendMessage("获取寝室电量出错了：" + err.Error())
+	} else if electric <= 15 {
+		info, err = sendMessage("寝室电量不足 15 度啦～")
+	}
+
+	if err == nil {
+		log.Println(info)
+	}
 }
 
 func main() {
-	tasks = cron.New()
-	taskElectricBalance()
-	taskHealthReport()
-	tasks.Start()
-	defer tasks.Stop()
-	select {}
+	getElectricInfo()
 }

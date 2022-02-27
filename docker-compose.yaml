@@ -1,9 +1,0 @@
-version: "2"
-services:
-  shutong:
-    image: registry.cn-hangzhou.aliyuncs.com/chaop-public/nju-shutong
-    container_name: nju-shutong
-    restart: always
-    volumes:
-      - ./scripts:/scripts
-    env_file: .env
