@@ -30,6 +30,9 @@ func getFloatFromFile(filename string) (float64, error) {
 	}
 
 	s := string(bs)
+	if s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, err
