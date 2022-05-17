@@ -21,6 +21,7 @@ var EAI_SESS = os.Getenv("EAI_SESS")
 var ROOM = strings.ReplaceAll(os.Getenv("ROOM"), " ", "")
 var TGID = os.Getenv("TGID")
 var TGBOTID = os.Getenv("TGBOTID")
+var TGMONITORBOTID = os.Getenv("TGMONITORBOTID")
 var tofile = os.Getenv("TOFILE")
 
 func getFloatFromFile(filename string) (float64, error) {
@@ -41,8 +42,8 @@ func getFloatFromFile(filename string) (float64, error) {
 	return f, nil
 }
 
-func sendMessage(content string) (string, error) {
-	url := "https://api.telegram.org/bot" + TGBOTID + "/sendMessage?chat_id=" + TGID + "&text=" + content
+func sendMessage(content string, token string) (string, error) {
+	url := "https://api.telegram.org/bot" + token + "/sendMessage?chat_id=" + TGID + "&text=" + content
 	request, err := http.Get(url)
 	if err != nil {
 		return "", err
@@ -115,38 +116,38 @@ func getElectricInfo() {
 	ids := strings.SplitN(ROOM, ",", 3)
 
 	if len(ids) != 3 {
-		sendMessage("寝室未配置或配置错误，或未配置 EAI_SESS")
+		sendMessage("寝室未配置或配置错误，或未配置 EAI_SESS", TGBOTID)
 		panic(errors.New("寝室未配置或配置错误"))
 	}
 
 	electric, err := getElectricBalance(ids[0], ids[1], ids[2])
 
 	if err != nil {
-		sendMessage("获取寝室电量出错了：" + err.Error())
+		sendMessage("Error (Electricity) - 获取寝室电量出错了："+err.Error(), TGMONITORBOTID)
 		panic(err)
 	}
 
 	log.Println("electric left:", electric, err)
 
-	if electric <= 15 {
-		sendMessage("寝室电量不足 15 度啦～")
-	}
-
 	old_electric, err := getFloatFromFile(tofile)
 	if err != nil {
-		sendMessage("从文件读取电量出错了：" + err.Error())
+		sendMessage("Error (Electricity) - 从文件读取电量出错了："+err.Error(), TGMONITORBOTID)
 		panic(err)
+	}
+
+	if electric <= 15 && old_electric > 15 {
+		sendMessage("寝室电量不足 15 度啦～", TGBOTID)
 	}
 
 	if old_electric < electric {
 		money := int((electric - old_electric) * 0.58)
-		sendMessage("充值成功！上次记录的电量：" + strconv.FormatFloat(old_electric, 'E', -1, 64) + "，现在电量：" + strconv.FormatFloat(electric, 'E', -1, 64) + "，可能的充值金额大约为" + strconv.Itoa(money))
+		sendMessage("充值成功！上次记录的电量："+strconv.FormatFloat(old_electric, 'E', -1, 64)+"，现在电量："+strconv.FormatFloat(electric, 'E', -1, 64)+"，可能的充值金额大约为"+strconv.Itoa(money), TGBOTID)
 	}
 
 	err = ioutil.WriteFile(tofile, []byte(strconv.FormatFloat(electric, 'E', -1, 64)), 0644)
 
 	if err != nil {
-		sendMessage("写入文件出错了：" + err.Error())
+		sendMessage("Error (Electricity) - 写入文件出错了："+err.Error(), TGMONITORBOTID)
 		panic(err)
 	}
 
